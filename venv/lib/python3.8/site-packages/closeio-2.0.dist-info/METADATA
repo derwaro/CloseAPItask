@@ -1,0 +1,21 @@
+Metadata-Version: 2.1
+Name: closeio
+Version: 2.0
+Summary: Close API Python Client
+Home-page: https://github.com/closeio/closeio-api/
+Author: Close Team
+Author-email: UNKNOWN
+License: UNKNOWN
+Platform: UNKNOWN
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Operating System :: OS Independent
+Requires-Dist: requests (>=2.11.1)
+
+Close API Python Client
+
+
