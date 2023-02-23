@@ -1,2 +1,4 @@
-*./venv/*
+venv/
 secret.env
+secret
+feedback.md

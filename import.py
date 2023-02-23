@@ -1,18 +1,22 @@
 #!/usr/bin/env python3.8
+import babel.numbers
 import csv
-import datetime
-from statistics import median
-from dateutil.parser import parse as parse_date
 from closeio_api import Client
-import locale
+from datetime import datetime
+from dateutil.parser import parse as parse_date
+from decimal import Decimal
 from dotenv import load_dotenv
+from email_validator import validate_email, EmailNotValidError
+from statistics import median
 import os
 
 # load the .env file containing your api key and custom field ids
 load_dotenv()
 
 # set locale so that numbers are correctly formated in the report
-locale.setlocale(locale.LC_ALL, "en_US.utf8")
+currency = os.getenv("BABEL_CURRENCY") or "USD"
+locale = os.getenv("BABEL_LOCALE") or "en_US"
+
 
 # vars for close api. enter your key and ids in ""
 api_key = os.getenv("API_KEY")
@@ -58,7 +62,6 @@ for r in csv_raw_data:
     if "," in r[2]:
         tmp = r[2].split(",")
         r[2] = [i for i in tmp]
-
     elif ";" in r[2]:
         tmp = r[2].split(";")
         r[2] = [i for i in tmp]
@@ -66,47 +69,48 @@ for r in csv_raw_data:
         r[2] = [""]
     else:
         r[2] = [r[2]]
-    for i, e in enumerate(r[2]):
+    if r[2] != [""]:
         tmp = []
-        if "?!" not in e:
-            tmp.append(e)
-        r[2] = tmp
-    for e in r[2]:
-        tmp = []
-        if "@." in e:
-            tmp.append(e)
-        r[2] = tmp
+        for e in r[2]:
+            try:
+                validate_email(e)
+                tmp.append(e)
+            except EmailNotValidError:
+                pass
+            if tmp != []:
+                r[2] = tmp
+            else:
+                r[2] = [""]
 
 # clean up and prepare phone numbers:
 for r in csv_raw_data:
-    if r[3] != "":
-        if r[3].find("+") == -1:
-            r[3] = [""]
-        else:
-            tmp = r[3][r[3].find("+") :]
-            if len(tmp) < 5:
-                r[3] = [""]
-            if "\n" in tmp:
-                r[3] = [i for i in tmp.split("\n")]
-                r[3] = ",".join(r[3])
-                num = ""
-                for i in r[3]:
-                    for j in i:
-                        if j.isdigit():
-                            num += j
-                        if j == ",":
-                            num += j
-                r[3] = num.split(",")
-            else:
-                num = ""
-                for i in tmp:
-                    if i.isdigit():
-                        num += i
-                    if i == ",":
-                        num += i
-                    r[3] = num.split(",")
-    else:
+    if r[3].find("+") == -1:
         r[3] = [""]
+    else:
+        tmp = r[3]
+        if len(tmp) < 5:
+            r[3] = [""]
+        if "\n" in tmp:
+            r[3] = [i for i in tmp.split("\n")]
+            r[3] = ",".join(r[3])
+            num = ""
+            for i in r[3]:
+                for j in i:
+                    if j.isdigit():
+                        num += j
+                    if j == ",":
+                        num += j
+            r[3] = num.split(",")
+        else:
+            num = ""
+            for i in tmp:
+                if i.isdigit():
+                    num += i
+                if i == ",":
+                    num += i
+                r[3] = num.split(",")
+    if r[3] != [""]:
+        r[3] = ["+" + p for p in r[3]]
 
 
 # clean up and prepare company founded date:
@@ -170,20 +174,44 @@ for i in leads.keys():
                     name = " ".join(title_and_name)
                 emails = []
                 for e in c[2]:
-                    if c[2] == [""]:
-                        emails.append({"email": "no@mail.com"})
-                    else:
+                    if c[2] != [""]:
                         emails.append({"email": e})
+                    else:
+                        pass
+                    # if c[2] == [""]:
+                    #    emails.append({"email": "no@mail.com"})
+                    # else:
+                    #    emails.append({"email": e})
 
                 phones = []
                 for p in c[3]:
-                    phones.append({"phone": p})
+                    if c[3] != [""]:
+                        phones.append({"phone": p})
+                    else:
+                        pass
                 # print(phones)
                 # for j in i:
                 #    phones.append({"phone": j})
                 tmp = {"name": name, "title": title, "emails": emails, "phones": phones}
                 # print(tmp)
                 leads[i]["contacts"].append(tmp)
+
+# remove empty contact details from contacts
+for company in leads.values():
+    for contact in company.get("contacts", []):
+        if contact["emails"] == []:
+            del contact["emails"]
+        if contact["phones"] == []:
+            del contact["phones"]
+        if contact["name"] == "":
+            del contact["name"]
+        if contact["title"] == "":
+            del contact["title"]
+
+# check if the former loop removed all contact fields and removes the contacts key from the lead to comply with api requirements
+for company in leads.values():
+    if company["contacts"] == [{}]:
+        del company["contacts"]
 
 
 # post the payload to the close api
@@ -197,14 +225,14 @@ print("Report by US State/Lead/Revenue")
 while correctStart == False:
     startdate = input("Please choose a start date in format DD.MM.YYYY: ")
     try:
-        startdate = datetime.datetime.strptime(startdate, "%d.%m.%Y").date()
+        startdate = datetime.strptime(startdate, "%d.%m.%Y").date()
         correctStart = True
     except ValueError:
         correctStart = False
 while correctEnd == False:
     enddate = input("Please choose a end date in format DD.MM.YYYY: ")
     try:
-        enddate = datetime.datetime.strptime(enddate, "%d.%m.%Y").date()
+        enddate = datetime.strptime(enddate, "%d.%m.%Y").date()
         correctEnd = True
     except ValueError:
         correctEnd = False
@@ -234,7 +262,7 @@ for l in leads.keys():
     ):
         if (
             startdate
-            <= datetime.datetime.strptime(
+            <= datetime.strptime(
                 leads[l][custom_company_founded_api_id], "%Y-%m-%d %H:%M:%S"
             ).date()
             <= enddate
@@ -259,15 +287,20 @@ for l in leads.keys():
                             custom_company_revenue_api_id
                         ]
 
-# use median function to set the MedianRevenue right and format the number according to locale with currency sign, thousands-separator and comma
+# remove states with no companies founded within startdate and enddate:
+for s in dstates.copy().keys():
+    if dstates[s]["Leads"] == 0:
+        del dstates[s]
+
+# use median function to set the MedianRevenue right and format the number according to babel/locale with currency sign, thousands-separator and comma
 for s in dstates.keys():
     if dstates[s]["MedianRevenue"] != []:
-        dstates[s]["MedianRevenue"] = locale.currency(
-            median(dstates[s]["MedianRevenue"]), symbol=True, grouping=True
+        dstates[s]["MedianRevenue"] = babel.numbers.format_currency(
+            Decimal(median(dstates[s]["MedianRevenue"])), currency, locale=locale
         )
     if dstates[s]["TotalRevenue"] != 0.0:
-        dstates[s]["TotalRevenue"] = locale.currency(
-            dstates[s]["TotalRevenue"], symbol=True, grouping=True
+        dstates[s]["TotalRevenue"] = babel.numbers.format_currency(
+            Decimal(dstates[s]["TotalRevenue"]), currency, locale=locale
         )
 
 # set the key MostRevenue to only be the Leadname:
